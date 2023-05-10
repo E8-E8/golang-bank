@@ -5,9 +5,10 @@ import (
     "log"
     "encoding/json"
     "net/http"
-    "github.com/gorilla/mux"
     "fmt"
     "strconv"
+
+    "time"
     jwt "github.com/golang-jwt/jwt/v4"
     "gobank/storage"
     "gobank/types"
@@ -26,16 +27,23 @@ func NewApiServer(listenAddr string, store storage.Storage) *APIServer {
 }
 
 func (s *APIServer) Run() error {
-    router := mux.NewRouter()
+    router := http.NewServeMux()
     
-    router.Handle("/login", makeHTTPHandleFunc(s.handleLogin))
+    router.HandleFunc("/login", makeHTTPHandleFunc(s.handleLogin))
     router.HandleFunc("/account", makeHTTPHandleFunc(s.handleAccount))
-    router.HandleFunc("/account/{id}", withJWTAuth(makeHTTPHandleFunc(s.handleAccountWithID), s.store))
+    router.HandleFunc("/account/", withJWTAuth(makeHTTPHandleFunc(s.handleAccountWithID), s.store))
     router.HandleFunc("/transfer", makeHTTPHandleFunc(s.handleTransfer))
 
     log.Println("json API server running on port: ", s.listenAddr)
 
-    return http.ListenAndServe(s.listenAddr, router)
+    server := &http.Server{
+		Addr:         s.listenAddr,
+		Handler:      router,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+	}
+
+	return server.ListenAndServe()
 }
 
 func (s *APIServer) handleLogin(w http.ResponseWriter, r *http.Request) error {
@@ -257,7 +265,7 @@ func makeHTTPHandleFunc(f apiFunc) http.HandlerFunc {
 }
 
 func getID(r *http.Request) (int, error) {
-    idStr := mux.Vars(r)["id"]
+	idStr := r.URL.Path[len("/account/"):]
     id, err := strconv.Atoi(idStr)
     if err != nil {
         return id, fmt.Errorf("This id is not a valid integer")
